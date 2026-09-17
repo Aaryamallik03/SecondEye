@@ -1,84 +1,73 @@
 import cv2
-import pickle
 import numpy as np
-import pyttsx3
+import pickle
 import threading
 import queue
 import time
-
+import subprocess
 from deepface import DeepFace
 
+THRESHOLD = 0.30
+RECOGNITION_INTERVAL = 10
 
-# ==========================================
-# FACE DETECTOR
-# ==========================================
+NO_FACE_RESET_TIME = 4.0
+MAX_MATCH_DISTANCE = 180
+
+UNKNOWN_CONFIRM_FRAMES = 3
+KNOWN_CONFIRM_FRAMES = 3
+POSITION_CONFIRM_FRAMES = 3
+
+with open("data/database/embeddings.pkl", "rb") as f:
+    database = pickle.load(f)
 
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades +
     "haarcascade_frontalface_default.xml"
 )
 
-
-# ==========================================
-# LOAD DATABASE
-# ==========================================
-
-with open(
-    "data/database/embeddings.pkl",
-    "rb"
-) as f:
-
-    database = pickle.load(f)
-
-
-# ==========================================
-# SPEECH QUEUE
-# ==========================================
-
 speech_queue = queue.Queue()
 
 
 def speech_worker():
-
     while True:
+        text = speech_queue.get()
 
-        message = speech_queue.get()
-
-        if message is None:
+        if text is None:
             break
 
-        print("VOICE:", message)
-
         try:
+            print("VOICE:", text)
 
-            engine = pyttsx3.init()
+            safe_text = text.replace("'", "''")
 
-            engine.setProperty(
-                "rate",
-                150
+            command = (
+                "Add-Type -AssemblyName System.Speech; "
+                "$speaker = New-Object "
+                "System.Speech.Synthesis.SpeechSynthesizer; "
+                "$speaker.Rate = 0; "
+                "$speaker.Volume = 100; "
+                f"$speaker.Speak('{safe_text}'); "
+                "$speaker.Dispose();"
             )
 
-            engine.setProperty(
-                "volume",
-                1.0
+            subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    command
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
             )
-
-            engine.say(message)
-
-            engine.runAndWait()
-
-            engine.stop()
-
-            del engine
 
         except Exception as e:
+            print("TTS ERROR:", e)
 
-            print(
-                "Speech error:",
-                e
-            )
-
-        speech_queue.task_done()
+        finally:
+            speech_queue.task_done()
 
 
 speech_thread = threading.Thread(
@@ -89,420 +78,744 @@ speech_thread = threading.Thread(
 speech_thread.start()
 
 
-def speak(message):
-
-    speech_queue.put(message)
-
-
-# ==========================================
-# CAMERA
-# ==========================================
-
-camera = cv2.VideoCapture(0)
+def speak(text):
+    speech_queue.put(text)
 
 
-if not camera.isOpened():
+def cosine_distance(a, b):
+    a = np.array(a)
+    b = np.array(b)
 
-    print(
-        "ERROR: Could not access camera."
+    return 1 - (
+        np.dot(a, b)
+        /
+        (
+            np.linalg.norm(a)
+            *
+            np.linalg.norm(b)
+        )
     )
 
+
+def get_position(center_x, frame_width):
+    ratio = center_x / frame_width
+
+    if ratio < 0.35:
+        return "left"
+
+    elif ratio > 0.65:
+        return "right"
+
+    else:
+        return "center"
+
+
+cap = cv2.VideoCapture(0)
+
+if not cap.isOpened():
+    print("ERROR: Could not open camera.")
     exit()
 
 
-# ==========================================
-# SETTINGS
-# ==========================================
-
-THRESHOLD = 0.30
-
-RECOGNITION_INTERVAL = 10
-
-STABLE_FRAMES = 2
-
-NO_FACE_RESET_TIME = 1.5
-
-
-# ==========================================
-# STATE
-# ==========================================
-
-frame_count = 0
-
-results = []
-
-last_face_time = time.time()
-
 current_people = {}
-
 candidate_people = {}
-
 candidate_counts = {}
 
+previous_faces = {}
+last_seen = {}
 
-# ==========================================
-# START
-# ==========================================
+next_person_id = 0
+
+position_candidates = {}
+position_counts = {}
+confirmed_positions = {}
+
+frame_count = 0
+last_face_time = time.time()
+
 
 print()
 print("==============================")
-print("SecondEye - Multi Person Mode")
+print("SecondEye - Persistent Tracking")
 print("==============================")
 print("Press Q to quit.")
 print()
 
 
-# ==========================================
-# MAIN LOOP
-# ==========================================
-
 while True:
 
-    ret, frame = camera.read()
+    ret, frame = cap.read()
 
     if not ret:
-
-        print(
-            "ERROR: Could not read camera."
-        )
-
         break
 
-
-    # ======================================
-    # FACE DETECTION
-    # ======================================
+    frame_height, frame_width = frame.shape[:2]
 
     gray = cv2.cvtColor(
         frame,
         cv2.COLOR_BGR2GRAY
     )
 
-
     faces = face_cascade.detectMultiScale(
         gray,
         scaleFactor=1.1,
         minNeighbors=5,
-        minSize=(70, 70)
+        minSize=(60, 60)
     )
 
 
-    frame_count += 1
+    # ------------------------------------------------
+    # NO FACE DETECTED
+    # ------------------------------------------------
+
+    if len(faces) == 0:
+
+        print("No faces detected.")
+
+        # IMPORTANT:
+        # We do NOT immediately delete tracking information.
+        # This allows a person to disappear briefly and return
+        # without receiving a new ID.
+
+        if time.time() - last_face_time > NO_FACE_RESET_TIME:
+
+            expired_ids = []
+
+            for person_id in previous_faces:
+
+                if (
+                    time.time()
+                    -
+                    last_seen.get(person_id, 0)
+                    >
+                    NO_FACE_RESET_TIME
+                ):
+                    expired_ids.append(person_id)
 
 
-    # ======================================
+            for person_id in expired_ids:
+
+                previous_faces.pop(
+                    person_id,
+                    None
+                )
+
+                last_seen.pop(
+                    person_id,
+                    None
+                )
+
+                current_people.pop(
+                    person_id,
+                    None
+                )
+
+                candidate_people.pop(
+                    person_id,
+                    None
+                )
+
+                candidate_counts.pop(
+                    person_id,
+                    None
+                )
+
+                position_candidates.pop(
+                    person_id,
+                    None
+                )
+
+                position_counts.pop(
+                    person_id,
+                    None
+                )
+
+                confirmed_positions.pop(
+                    person_id,
+                    None
+                )
+
+
+        cv2.imshow(
+            "SecondEye",
+            frame
+        )
+
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+
+        continue
+
+
+    last_face_time = time.time()
+
+
+    # ------------------------------------------------
+    # CREATE DETECTED FACE DATA
+    # ------------------------------------------------
+
+    detected_faces = []
+
+    for (x, y, w, h) in faces:
+
+        center_x = x + w // 2
+        center_y = y + h // 2
+
+        detected_faces.append({
+            "box": (x, y, w, h),
+            "center": (center_x, center_y)
+        })
+
+
+    # ------------------------------------------------
+    # TRACK FACES
+    # ------------------------------------------------
+
+    matched_ids = set()
+
+    current_frame_people = {}
+
+
+    for face in detected_faces:
+
+        center = face["center"]
+
+        best_id = None
+        best_distance = MAX_MATCH_DISTANCE
+
+
+        for person_id, previous_center in previous_faces.items():
+
+            if person_id in matched_ids:
+                continue
+
+
+            distance = np.linalg.norm(
+                np.array(center)
+                -
+                np.array(previous_center)
+            )
+
+
+            if distance < best_distance:
+
+                best_distance = distance
+                best_id = person_id
+
+
+        # If no existing person is close enough,
+        # create a new ID.
+
+        if best_id is None:
+
+            best_id = next_person_id
+            next_person_id += 1
+
+            print(
+                f"NEW TRACK -> Person ID {best_id}"
+            )
+
+
+        matched_ids.add(best_id)
+
+        current_frame_people[
+            best_id
+        ] = face
+
+        last_seen[
+            best_id
+        ] = time.time()
+
+
+    # ------------------------------------------------
+    # UPDATE TRACKING CENTERS
+    # ------------------------------------------------
+
+    for person_id, face_data in current_frame_people.items():
+
+        previous_faces[
+            person_id
+        ] = face_data["center"]
+
+
+    # ------------------------------------------------
     # RECOGNITION
-    # ======================================
+    # ------------------------------------------------
 
     if frame_count % RECOGNITION_INTERVAL == 0:
 
-        results = []
+        for person_id, face_data in current_frame_people.items():
+
+            x, y, w, h = face_data["box"]
+
+            face_crop = frame[
+                y:y + h,
+                x:x + w
+            ]
 
 
-        # ==================================
-        # NO FACES
-        # ==================================
-
-        if len(faces) == 0:
-
-            if (
-                time.time()
-                - last_face_time
-                > NO_FACE_RESET_TIME
-            ):
-
-                if len(current_people) > 0:
-
-                    print(
-                        "No faces detected."
-                    )
-
-                current_people = {}
-
-                candidate_people = {}
-
-                candidate_counts = {}
+            if face_crop.size == 0:
+                continue
 
 
-        # ==================================
-        # FACES FOUND
-        # ==================================
+            try:
 
-        else:
-
-            last_face_time = time.time()
-
-
-            new_people = {}
+                result = DeepFace.represent(
+                    img_path=face_crop,
+                    model_name="Facenet512",
+                    detector_backend="skip",
+                    enforce_detection=False
+                )
 
 
-            # ==================================
-            # PROCESS EVERY FACE
-            # ==================================
+                embedding = result[0]["embedding"]
 
-            for face_index, face in enumerate(faces):
-
-                x, y, w, h = face
+                best_name = "Unknown"
+                best_distance = 999
 
 
-                face_crop = frame[
-                    y:y+h,
-                    x:x+w
-                ]
+                for entry in database:
 
-
-                try:
-
-                    # ==================================
-                    # CREATE EMBEDDING
-                    # ==================================
-
-                    embedding = DeepFace.represent(
-                        img_path=face_crop,
-                        model_name="Facenet512",
-                        detector_backend="skip",
-                        enforce_detection=False
-                    )[0]["embedding"]
-
-
-                    embedding = np.array(
-                        embedding
+                    distance = cosine_distance(
+                        embedding,
+                        entry["embedding"]
                     )
 
 
-                    # ==================================
-                    # FIND BEST MATCH
-                    # ==================================
+                    if distance < best_distance:
+
+                        best_distance = distance
+                        best_name = entry["name"]
+
+
+                if best_distance > THRESHOLD:
 
                     best_name = "Unknown"
 
-                    best_distance = float("inf")
+
+                print(
+                    f"Person ID {person_id}: "
+                    f"{best_name} | Distance: "
+                    f"{best_distance:.2f}"
+                )
 
 
-                    for entry in database:
+                # ------------------------------------------------
+                # FIRST RECOGNITION
+                # ------------------------------------------------
 
-                        stored = np.array(
-                            entry["embedding"]
-                        )
+                if person_id not in current_people:
 
+                    candidate_people[
+                        person_id
+                    ] = best_name
 
-                        cosine_distance = 1 - (
-                            np.dot(
-                                embedding,
-                                stored
-                            )
-                            /
-                            (
-                                np.linalg.norm(
-                                    embedding
-                                )
-                                *
-                                np.linalg.norm(
-                                    stored
-                                )
-                            )
-                        )
+                    candidate_counts[
+                        person_id
+                    ] = 1
+
+                    current_people[
+                        person_id
+                    ] = None
 
 
-                        if cosine_distance < best_distance:
+                else:
 
-                            best_distance = (
-                                cosine_distance
-                            )
-
-                            best_name = (
-                                entry["name"]
-                            )
+                    current_identity = current_people[
+                        person_id
+                    ]
 
 
-                    # ==================================
-                    # UNKNOWN THRESHOLD
-                    # ==================================
+                    # ------------------------------------------------
+                    # IDENTITY NOT YET CONFIRMED
+                    # ------------------------------------------------
 
-                    if best_distance > THRESHOLD:
+                    if current_identity is None:
 
-                        best_name = "Unknown"
+                        if (
+                            candidate_people.get(person_id)
+                            ==
+                            best_name
+                        ):
 
-
-                    print(
-                        f"Face {face_index + 1}: "
-                        f"{best_name} "
-                        f"| Distance: "
-                        f"{best_distance:.2f}"
-                    )
-
-
-                    # ==================================
-                    # PERSON ID
-                    # ==================================
-
-                    person_id = face_index
-
-
-                    # ==================================
-                    # STABILITY CHECK
-                    # ==================================
-
-                    if person_id not in candidate_people:
-
-                        candidate_people[
-                            person_id
-                        ] = best_name
-
-                        candidate_counts[
-                            person_id
-                        ] = 1
-
-
-                    elif (
-                        candidate_people[
-                            person_id
-                        ]
-                        == best_name
-                    ):
-
-                        candidate_counts[
-                            person_id
-                        ] += 1
-
-
-                    else:
-
-                        candidate_people[
-                            person_id
-                        ] = best_name
-
-                        candidate_counts[
-                            person_id
-                        ] = 1
-
-
-                    # ==================================
-                    # CONFIRM PERSON
-                    # ==================================
-
-                    if (
-                        candidate_counts[
-                            person_id
-                        ]
-                        >= STABLE_FRAMES
-                    ):
-
-                        previous_name = (
-                            current_people.get(
+                            candidate_counts[
                                 person_id
-                            )
+                            ] += 1
+
+                        else:
+
+                            candidate_people[
+                                person_id
+                            ] = best_name
+
+                            candidate_counts[
+                                person_id
+                            ] = 1
+
+
+                        required_frames = (
+                            UNKNOWN_CONFIRM_FRAMES
+                            if best_name == "Unknown"
+                            else KNOWN_CONFIRM_FRAMES
                         )
 
 
-                        if previous_name != best_name:
+                        if (
+                            candidate_counts.get(person_id, 0)
+                            >=
+                            required_frames
+                        ):
 
                             current_people[
                                 person_id
                             ] = best_name
 
+                            candidate_counts[
+                                person_id
+                            ] = 0
+
 
                             print(
-                                "PERSON CHANGED ->",
-                                best_name
+                                "PERSON CHANGED -> "
+                                f"{best_name}"
+                            )
+
+
+                            position = get_position(
+                                face_data["center"][0],
+                                frame_width
                             )
 
 
                             if best_name == "Unknown":
 
-                                message = (
-                                    "Unknown person detected."
-                                )
+                                if position == "left":
+
+                                    speak(
+                                        "Unknown person detected, "
+                                        "on your left."
+                                    )
+
+                                elif position == "right":
+
+                                    speak(
+                                        "Unknown person detected, "
+                                        "on your right."
+                                    )
+
+                                else:
+
+                                    speak(
+                                        "Unknown person detected, "
+                                        "in front of you."
+                                    )
 
                             else:
 
-                                message = (
-                                    f"{best_name} detected."
-                                )
+                                if position == "left":
+
+                                    speak(
+                                        f"{best_name} detected, "
+                                        "slightly to your left."
+                                    )
+
+                                elif position == "right":
+
+                                    speak(
+                                        f"{best_name} detected, "
+                                        "slightly to your right."
+                                    )
+
+                                else:
+
+                                    speak(
+                                        f"{best_name} detected, "
+                                        "in front of you."
+                                    )
+
+
+                    # ------------------------------------------------
+                    # SAME IDENTITY
+                    # ------------------------------------------------
+
+                    elif best_name == current_identity:
+
+                        candidate_counts[
+                            person_id
+                        ] = 0
+
+
+                    # ------------------------------------------------
+                    # POSSIBLE IDENTITY CHANGE
+                    # ------------------------------------------------
+
+                    else:
+
+                        if (
+                            candidate_people.get(person_id)
+                            ==
+                            best_name
+                        ):
+
+                            candidate_counts[
+                                person_id
+                            ] += 1
+
+                        else:
+
+                            candidate_people[
+                                person_id
+                            ] = best_name
+
+                            candidate_counts[
+                                person_id
+                            ] = 1
+
+
+                        required_frames = (
+                            UNKNOWN_CONFIRM_FRAMES
+                            if best_name == "Unknown"
+                            else KNOWN_CONFIRM_FRAMES
+                        )
+
+
+                        if (
+                            candidate_counts.get(person_id, 0)
+                            >=
+                            required_frames
+                        ):
+
+                            current_people[
+                                person_id
+                            ] = best_name
+
+                            candidate_counts[
+                                person_id
+                            ] = 0
 
 
                             print(
-                                "ADDING TO SPEECH ->",
-                                message
+                                "PERSON CHANGED -> "
+                                f"{best_name}"
                             )
 
 
-                            speak(message)
+                            position = get_position(
+                                face_data["center"][0],
+                                frame_width
+                            )
 
 
-                    # ==================================
-                    # SAVE RESULT
-                    # ==================================
+                            if best_name == "Unknown":
 
-                    new_people[
-                        person_id
-                    ] = best_name
+                                if position == "left":
 
+                                    speak(
+                                        "Unknown person detected, "
+                                        "on your left."
+                                    )
 
-                    results.append(
-                        (
-                            x,
-                            y,
-                            w,
-                            h,
-                            best_name,
-                            best_distance
-                        )
-                    )
+                                elif position == "right":
 
+                                    speak(
+                                        "Unknown person detected, "
+                                        "on your right."
+                                    )
 
-                except Exception as e:
+                                else:
 
-                    print(
-                        "Recognition error:",
-                        e
-                    )
+                                    speak(
+                                        "Unknown person detected, "
+                                        "in front of you."
+                                    )
 
+                            else:
 
-            # ==================================
-            # UPDATE PEOPLE
-            # ==================================
+                                if position == "left":
 
-            current_people = {
-                key: value
-                for key, value
-                in current_people.items()
-                if key < len(faces)
-            }
+                                    speak(
+                                        f"{best_name} detected, "
+                                        "slightly to your left."
+                                    )
 
+                                elif position == "right":
 
-    # ======================================
-    # DRAW FACE BOXES
-    # ======================================
+                                    speak(
+                                        f"{best_name} detected, "
+                                        "slightly to your right."
+                                    )
 
-    for x, y, w, h in faces:
+                                else:
 
-        name = "Unknown"
-
-        distance = 1.0
+                                    speak(
+                                        f"{best_name} detected, "
+                                        "in front of you."
+                                    )
 
 
-        for (
-            rx,
-            ry,
-            rw,
-            rh,
-            rname,
-            rdistance
-        ) in results:
+            except Exception as e:
+
+                print(
+                    "Recognition error "
+                    f"for Person ID {person_id}:",
+                    e
+                )
 
 
-            if (
-                abs(x - rx) < 20
-                and
-                abs(y - ry) < 20
-            ):
+    # ------------------------------------------------
+    # POSITION TRACKING
+    # ------------------------------------------------
 
-                name = rname
+    for person_id, face_data in current_frame_people.items():
 
-                distance = rdistance
+        if current_people.get(person_id) is None:
+            continue
 
-                break
+
+        center_x = face_data["center"][0]
+
+        new_position = get_position(
+            center_x,
+            frame_width
+        )
+
+
+        old_candidate = position_candidates.get(
+            person_id
+        )
+
+
+        if old_candidate == new_position:
+
+            position_counts[
+                person_id
+            ] = position_counts.get(
+                person_id,
+                0
+            ) + 1
+
+        else:
+
+            position_candidates[
+                person_id
+            ] = new_position
+
+            position_counts[
+                person_id
+            ] = 1
+
+
+        if (
+            position_counts.get(person_id, 0)
+            >=
+            POSITION_CONFIRM_FRAMES
+        ):
+
+            confirmed_position = position_candidates[
+                person_id
+            ]
+
+
+            previous_position = confirmed_positions.get(
+                person_id
+            )
+
+
+            if previous_position != confirmed_position:
+
+                confirmed_positions[
+                    person_id
+                ] = confirmed_position
+
+
+                identity = current_people.get(
+                    person_id
+                )
+
+
+                # Only announce movement after
+                # the person's position has changed.
+
+                if previous_position is not None:
+
+                    if identity == "Unknown":
+
+                        if confirmed_position == "left":
+
+                            speak(
+                                "Unknown person "
+                                "moved to your left."
+                            )
+
+                        elif confirmed_position == "right":
+
+                            speak(
+                                "Unknown person "
+                                "moved to your right."
+                            )
+
+                        else:
+
+                            speak(
+                                "Unknown person "
+                                "is in front of you."
+                            )
+
+                    else:
+
+                        if confirmed_position == "left":
+
+                            speak(
+                                f"{identity} is "
+                                "slightly to your left."
+                            )
+
+                        elif confirmed_position == "right":
+
+                            speak(
+                                f"{identity} is "
+                                "slightly to your right."
+                            )
+
+                        else:
+
+                            speak(
+                                f"{identity} is "
+                                "in front of you."
+                            )
+
+
+            position_counts[
+                person_id
+            ] = 0
+
+
+    # ------------------------------------------------
+    # DRAW RESULTS
+    # ------------------------------------------------
+
+    for person_id, face_data in current_frame_people.items():
+
+        x, y, w, h = face_data["box"]
+
+
+        identity = current_people.get(
+            person_id,
+            "..."
+        )
+
+
+        position = confirmed_positions.get(
+            person_id,
+            "..."
+        )
+
+
+        label = (
+            f"ID {person_id}: "
+            f"{identity} | "
+            f"{position}"
+        )
 
 
         cv2.rectangle(
@@ -516,62 +829,84 @@ while True:
 
         cv2.putText(
             frame,
-            f"{name} {distance:.2f}",
-            (
-                x,
-                max(y - 10, 20)
-            ),
+            label,
+            (x, y - 10),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
+            0.6,
             (0, 255, 0),
             2
         )
 
 
-    # ======================================
-    # FACE COUNT
-    # ======================================
+    # ------------------------------------------------
+    # POSITION BOUNDARIES
+    # ------------------------------------------------
 
-    cv2.putText(
-        frame,
-        f"Faces detected: {len(faces)}",
-        (20, 40),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 255, 0),
-        2
+    left_boundary = int(
+        frame_width * 0.35
+    )
+
+    right_boundary = int(
+        frame_width * 0.65
     )
 
 
-    # ======================================
-    # CURRENT PEOPLE
-    # ======================================
+    cv2.line(
+        frame,
+        (left_boundary, 0),
+        (left_boundary, frame_height),
+        (255, 255, 0),
+        1
+    )
 
-    if len(current_people) > 0:
 
-        people_text = ", ".join(
-            current_people.values()
-        )
-
-    else:
-
-        people_text = "No person"
+    cv2.line(
+        frame,
+        (right_boundary, 0),
+        (right_boundary, frame_height),
+        (255, 255, 0),
+        1
+    )
 
 
     cv2.putText(
         frame,
-        f"People: {people_text}",
-        (20, 75),
+        "LEFT",
+        (20, 30),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.7,
-        (0, 255, 0),
+        (255, 255, 0),
         2
     )
 
 
-    # ======================================
-    # SHOW CAMERA
-    # ======================================
+    cv2.putText(
+        frame,
+        "CENTER",
+        (
+            int(frame_width * 0.43),
+            30
+        ),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 255, 0),
+        2
+    )
+
+
+    cv2.putText(
+        frame,
+        "RIGHT",
+        (
+            int(frame_width * 0.85),
+            30
+        ),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 255, 0),
+        2
+    )
+
 
     cv2.imshow(
         "SecondEye",
@@ -579,26 +914,18 @@ while True:
     )
 
 
-    # ======================================
-    # QUIT
-    # ======================================
-
     if cv2.waitKey(1) & 0xFF == ord("q"):
-
         break
 
 
-# ==========================================
-# CLEANUP
-# ==========================================
+    frame_count += 1
 
-camera.release()
+
+cap.release()
 
 cv2.destroyAllWindows()
 
 speech_queue.put(None)
 
 print()
-print("==============================")
 print("SecondEye stopped.")
-print("==============================")
