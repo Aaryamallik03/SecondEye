@@ -6,6 +6,7 @@ import queue
 import time
 import subprocess
 from deepface import DeepFace
+import easyocr
 
 THRESHOLD = 0.30
 RECOGNITION_INTERVAL = 5
@@ -17,27 +18,13 @@ UNKNOWN_CONFIRM_FRAMES = 3
 KNOWN_CONFIRM_FRAMES = 3
 POSITION_CONFIRM_FRAMES = 3
 
-# --------------------------------------------------------------------
-# POSITION HYSTERESIS
-#
-# The old code used a single pair of boundaries (0.35 / 0.65) with no
-# dead zone. A face sitting right at ratio ~0.35 can jitter a few
-# pixels frame to frame and cross that line repeatedly, which reset
-# the POSITION_CONFIRM_FRAMES counter every time and occasionally let
-# 3 "wrong side" readings land in a row - that's the flicker.
-#
-# Fix: use a WIDER exit threshold than the entry threshold, based on
-# the position the track is already confirmed to be in. To leave
-# "left", you now have to move further right than what it took to
-# enter "left" in the first place. This creates a genuine dead zone
-# instead of a single hair-trigger line.
-# --------------------------------------------------------------------
-
 LEFT_ENTER = 0.32
 LEFT_EXIT = 0.40
 
 RIGHT_ENTER = 0.68
 RIGHT_EXIT = 0.60
+
+OCR_MIN_CONFIDENCE = 0.40
 
 with open("data/database/embeddings.pkl", "rb") as f:
     database = pickle.load(f)
@@ -46,6 +33,56 @@ face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades +
     "haarcascade_frontalface_default.xml"
 )
+
+# --------------------------------------------------------------------
+# TEXT READING (OCR)
+#
+# Loading EasyOCR's model takes a few seconds - this happens once at
+# startup, not per read, so pressing 'T' during use is fast. Runs on
+# CPU by default (gpu=False); set gpu=True if you have a CUDA GPU set
+# up and want faster reads.
+# --------------------------------------------------------------------
+
+print("Loading text reader (first run downloads the OCR model)...")
+ocr_reader = easyocr.Reader(["en"], gpu=False)
+print("Text reader ready.")
+
+ocr_queue = queue.Queue()
+
+
+def ocr_worker():
+    while True:
+        frame_to_read = ocr_queue.get()
+
+        if frame_to_read is None:
+            break
+
+        try:
+            results = ocr_reader.readtext(frame_to_read)
+
+            texts = [
+                text for (_, text, confidence) in results
+                if confidence > OCR_MIN_CONFIDENCE
+            ]
+
+            if texts:
+                combined = ". ".join(texts)
+                print("TEXT READ:", combined)
+                speak(f"Text reads: {combined}")
+            else:
+                print("TEXT READ: nothing found")
+                speak("No readable text found.")
+
+        except Exception as e:
+            print("OCR ERROR:", e)
+
+        finally:
+            ocr_queue.task_done()
+
+
+ocr_thread = threading.Thread(target=ocr_worker, daemon=True)
+ocr_thread.start()
+
 
 speech_queue = queue.Queue()
 
@@ -120,13 +157,6 @@ def cosine_distance(a, b):
 
 
 def get_position(center_x, frame_width, previous_position):
-    """
-    Returns left / center / right, but with hysteresis: the threshold
-    to LEAVE a zone is further than the threshold that was needed to
-    ENTER it. This stops small jitter near a boundary from flipping
-    the reading back and forth.
-    """
-
     ratio = center_x / frame_width
 
     if previous_position == "left":
@@ -139,9 +169,6 @@ def get_position(center_x, frame_width, previous_position):
             return "left" if ratio < LEFT_ENTER else "center"
         return "right"
 
-    # previous_position == "center" or unknown - use the tighter
-    # entry thresholds to decide if we've moved into left/right.
-
     if ratio < LEFT_ENTER:
         return "left"
 
@@ -152,25 +179,6 @@ def get_position(center_x, frame_width, previous_position):
 
 
 def assign_tracks(detected_faces, previous_faces, max_distance):
-    """
-    Global greedy nearest-neighbor assignment.
-
-    The old version looped through detected_faces in whatever order
-    the cascade returned them, and for each face grabbed whichever
-    previous track was closest AT THAT POINT. That's a per-face
-    greedy match, not a global one - so when two people are close
-    together, the face processed first can steal the track that
-    actually belonged to the second face, and IDs (and therefore
-    names) swap between people.
-
-    Fix: build every (distance, face_index, person_id) pair, sort ALL
-    of them by distance ascending, and assign in that order, skipping
-    any face or person_id that's already been claimed. This is a
-    standard greedy approximation of optimal assignment and is a big
-    step up from order-dependent matching, without needing a full
-    Hungarian-algorithm dependency.
-    """
-
     candidates = []
 
     for face_idx, face in enumerate(detected_faces):
@@ -224,13 +232,42 @@ confirmed_positions = {}
 frame_count = 0
 last_face_time = time.time()
 
+text_reading_flash_until = 0.0
+
 
 print()
 print("==============================")
 print("SecondEye - Persistent Tracking")
 print("==============================")
 print("Press Q to quit.")
+print("Press T to read text in view aloud.")
 print()
+
+
+def handle_key(key, frame):
+    """
+    Shared key handler used in both the no-face branch and the main
+    branch, so 'T' works no matter what's happening in the frame.
+    Returns True if the program should quit.
+
+    Accepts both upper and lower case, since Caps Lock (or Shift)
+    being on would otherwise make T/Q silently do nothing - cv2's
+    waitKey() returns the actual key code, uppercase and lowercase
+    are different codes.
+    """
+
+    global text_reading_flash_until
+
+    if key in (ord("q"), ord("Q")):
+        return True
+
+    if key in (ord("t"), ord("T")):
+        print("Reading text in view...")
+        speak("Reading text.")
+        ocr_queue.put(frame.copy())
+        text_reading_flash_until = time.time() + 1.0
+
+    return False
 
 
 while True:
@@ -277,9 +314,16 @@ while True:
                 position_counts.pop(person_id, None)
                 confirmed_positions.pop(person_id, None)
 
+        if time.time() < text_reading_flash_until:
+            cv2.putText(
+                frame, "READING TEXT...", (20, 70),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2
+            )
+
         cv2.imshow("SecondEye", frame)
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        key = cv2.waitKey(1) & 0xFF
+        if handle_key(key, frame):
             break
 
         continue
@@ -302,7 +346,7 @@ while True:
         })
 
     # ------------------------------------------------
-    # TRACK FACES (global assignment, see assign_tracks())
+    # TRACK FACES
     # ------------------------------------------------
 
     face_to_person, assigned_face_idx = assign_tracks(
@@ -326,10 +370,6 @@ while True:
 
         current_frame_people[person_id] = face
         last_seen[person_id] = time.time()
-
-    # ------------------------------------------------
-    # UPDATE TRACKING CENTERS
-    # ------------------------------------------------
 
     for person_id, face_data in current_frame_people.items():
         previous_faces[person_id] = face_data["center"]
@@ -384,18 +424,9 @@ while True:
                     current_people[person_id] = None
 
                 elif current_identity == best_name:
-                    # Identity confirmed and matches again - lock it
-                    # in, reset the candidate counter. This is what
-                    # keeps a confirmed identity from being nudged
-                    # away by a single noisy embedding.
                     candidate_counts[person_id] = 0
 
                 else:
-                    # Either identity not yet confirmed, or this is a
-                    # possible change away from a confirmed identity.
-                    # Both cases use the same confirm-over-N-frames
-                    # logic before accepting the new name.
-
                     if candidate_people.get(person_id) == best_name:
                         candidate_counts[person_id] = candidate_counts.get(person_id, 0) + 1
                     else:
@@ -441,7 +472,7 @@ while True:
                 print(f"Recognition error for Person ID {person_id}:", e)
 
     # ------------------------------------------------
-    # POSITION TRACKING (with hysteresis)
+    # POSITION TRACKING
     # ------------------------------------------------
 
     for person_id, face_data in current_frame_people.items():
@@ -511,12 +542,6 @@ while True:
             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2
         )
 
-    # ------------------------------------------------
-    # POSITION BOUNDARIES (visual reference only - the real
-    # hysteresis logic lives in get_position(), these lines just
-    # show the entry thresholds for a rough visual guide)
-    # ------------------------------------------------
-
     left_boundary = int(frame_width * LEFT_ENTER)
     right_boundary = int(frame_width * RIGHT_ENTER)
 
@@ -533,9 +558,16 @@ while True:
         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2
     )
 
+    if time.time() < text_reading_flash_until:
+        cv2.putText(
+            frame, "READING TEXT...", (20, frame_height - 20),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2
+        )
+
     cv2.imshow("SecondEye", frame)
 
-    if cv2.waitKey(1) & 0xFF == ord("q"):
+    key = cv2.waitKey(1) & 0xFF
+    if handle_key(key, frame):
         break
 
     frame_count += 1
@@ -543,7 +575,9 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
+
 speech_queue.put(None)
+ocr_queue.put(None)
 
 print()
 print("SecondEye stopped.")
