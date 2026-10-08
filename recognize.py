@@ -4,6 +4,7 @@ import pickle
 import threading
 import queue
 from collections import Counter
+from pathlib import Path
 
 from speech_manager import SpeechManager
 from deepface import DeepFace
@@ -51,13 +52,17 @@ speech_manager = SpeechManager(
 # LOAD FACE DATABASE
 # =========================
 
-with open(
-    "data/database/embeddings.pkl",
-    "rb"
-) as f:
+database_path = "data/database/embeddings.pkl"
+
+if not Path(database_path).exists():
+    raise FileNotFoundError(
+        f"Face database not found: {database_path}. "
+        "Run create_embeddings.py first."
+    )
+
+with open(database_path, "rb") as f:
 
     face_database = pickle.load(f)
-
 
 print(
     "Embedding database type:",
