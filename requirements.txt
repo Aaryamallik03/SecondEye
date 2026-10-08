@@ -1,0 +1,6 @@
+opencv-python
+numpy
+deepface
+easyocr
+ultralytics
+pyttsx3

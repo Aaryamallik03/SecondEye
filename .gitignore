@@ -9,6 +9,9 @@ __pycache__/
 data/faces/
 data/database/embeddings.pkl
 
+# Local model weights
+*.pt
+
 # IDE files
 .vscode/
 .idea/
@@ -19,3 +22,8 @@ Thumbs.db
 
 # Environment / secrets
 .env
+
+
+# Local archived development backups
+archive/
+
