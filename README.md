@@ -52,69 +52,34 @@ It is currently a research and development prototype and is **not intended for s
 
 ## System Architecture
 
+`	ext
+                    Webcam
+                       |
+                       v
+              Face Detection
+             OpenCV Haar Cascade
+                       |
+                       v
+              Multi-Face Tracking
+                  /          \
+                 v            v
+        Face Recognition     Spatial Position
+        DeepFace +           Left / Center /
+        FaceNet512              Right
+                 \            /
+                  \          /
+                   v        v
+                 Voice Feedback
+                  SpeechManager
 
-
-```text
-
-&#x20;                   Webcam
-
-&#x20;                      │
-
-&#x20;                      ▼
-
-&#x20;             Face Detection
-
-&#x20;            OpenCV Haar Cascade
-
-&#x20;                      │
-
-&#x20;                      ▼
-
-&#x20;             Multi-Face Tracking
-
-&#x20;                      │
-
-&#x20;             ┌────────┴────────┐
-
-&#x20;             ▼                 ▼
-
-&#x20;     Face Recognition     Spatial Position
-
-&#x20;       DeepFace +          Left / Center /
-
-&#x20;       FaceNet512              Right
-
-&#x20;             │                 │
-
-&#x20;             └────────┬────────┘
-
-&#x20;                      ▼
-
-&#x20;                Voice Feedback
-
-&#x20;                 SpeechManager
-
-
-
-
-
-&#x20;                 T key pressed
-
-&#x20;                      │
-
-&#x20;                      ▼
-
-&#x20;                   EasyOCR
-
-&#x20;                      │
-
-&#x20;                      ▼
-
-&#x20;                Spoken Text
-
-```
-
-
+                 T key pressed
+                       |
+                       v
+                    EasyOCR
+                       |
+                       v
+                 Spoken Text
+`
 
 ## How It Works
 
