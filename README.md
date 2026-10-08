@@ -303,6 +303,10 @@ cd SecondEye
 
 
 
+### Requirements
+
+Python 3.12.10 was used for development and testing.
+
 Create a virtual environment:
 
 
