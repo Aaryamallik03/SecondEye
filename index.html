@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>SecondEye — Assistive vision that says who's there</title>
+<meta name="description" content="SecondEye is an AI-powered assistive vision system for face recognition and voice-based identification. Try the interactive demo.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500&display=swap">
+<style>
+:root{--bg:#0c0809;--s1:#141012;--s2:#1c1518;--line:#2d2327;--tx:#f5ebef;--mut:#a89aa1;--pk:#ff4f93;--pk2:#ff9bc2;--ok:#ff4f93;
+--hd:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;--bd:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;--mo:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-behavior:smooth;scroll-padding-top:calc(72px + env(safe-area-inset-top,0px));background:var(--bg)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 var(--bd);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.w{max-width:1120px;margin:0 auto;padding:0 24px}
+nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;background:rgba(12,8,9,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .w{display:flex;align-items:center;justify-content:space-between;height:64px}
+.logo{font:700 20px var(--hd);letter-spacing:-.02em;display:flex;align-items:center;gap:10px}
+.logo i{width:10px;height:10px;border-radius:50%;background:var(--pk);box-shadow:0 0 0 4px rgba(255,79,147,.18)}
+nav ul{display:flex;gap:28px;list-style:none;margin:0;padding:0;font-size:14px;color:var(--mut)}
+nav ul a:hover{color:var(--tx)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 20px;border-radius:10px;font:500 14px var(--bd);border:1px solid var(--line);background:var(--s1);color:var(--tx);cursor:pointer;transition:.18s}
+.btn:hover{border-color:var(--pk2)}
+.btn.p{background:var(--pk);border-color:var(--pk);color:#1a0610;font-weight:600}
+.btn.p:hover{background:var(--pk2);border-color:var(--pk2)}
+.btn:focus-visible,.chip:focus-visible,input:focus-visible{outline:2px solid var(--pk2);outline-offset:2px}
+.hero{padding:96px 0 72px}
+.eyebrow{font:500 12px var(--mo);letter-spacing:.14em;text-transform:uppercase;color:var(--pk)}
+h1{font:700 clamp(40px,7vw,84px)/1 var(--hd);letter-spacing:-.035em;margin:18px 0 22px;max-width:15ch}
+h1 em{font-style:normal;color:var(--pk)}
+.lead{font-size:19px;color:var(--mut);max-width:56ch;margin:0 0 32px}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:64px}
+.facts div{background:var(--s1);padding:22px}
+.facts b{display:block;font:700 30px var(--hd);letter-spacing:-.02em}
+.facts span{font-size:13px;color:var(--mut)}
+section{padding:80px 0;border-top:1px solid var(--line)}
+h2{font:700 clamp(30px,4.5vw,46px)/1.05 var(--hd);letter-spacing:-.03em;margin:12px 0 14px}
+.sub{color:var(--mut);max-width:60ch;margin:0 0 40px}
+.demo{display:grid;grid-template-columns:1.5fr 1fr;gap:20px}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:16px;padding:20px}
+.card h3{font:500 12px var(--mo);letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin:0 0 14px}
+.stage{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#0f0a0c}
+canvas{display:block;width:100%;height:auto}
+.tag{position:absolute;top:12px;left:12px;font:500 11px var(--mo);background:rgba(12,8,9,.8);border:1px solid var(--line);padding:5px 9px;border-radius:6px;color:var(--mut)}
+.tag b{color:var(--pk);font-weight:500}
+.ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px}
+.chip{font:500 13px var(--bd);padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--s2);color:var(--mut);cursor:pointer}
+.chip[aria-pressed=true]{border-color:var(--pk);color:var(--tx);background:rgba(255,79,147,.1)}
+.slider{display:flex;align-items:center;gap:12px;margin-top:16px;font-size:13px;color:var(--mut)}
+input[type=range]{flex:1;accent-color:var(--pk)}
+.slider b{font:500 13px var(--mo);color:var(--tx);min-width:40px;text-align:right}
+.res{display:grid;gap:10px;min-height:64px}
+.r{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--s2)}
+.r b{font:600 15px var(--hd)}
+.r code{font:500 13px var(--mo);color:var(--pk2)}
+.r.u code{color:var(--mut)}
+.bar{grid-column:1/-1;height:4px;background:var(--line);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--pk)}
+.r.u .bar i{background:#6b5a62}
+.empty{color:var(--mut);font-size:14px;padding:8px 2px}
+.log{font:400 12px/1.7 var(--mo);color:var(--mut);background:#0a0607;border:1px solid var(--line);border-radius:10px;padding:12px;height:132px;overflow:auto;margin-top:14px}
+.log .k{color:var(--pk)}
+.db{display:grid;gap:8px;margin-top:4px}
+.db div{display:flex;align-items:center;justify-content:space-between;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--s2)}
+.emb{display:flex;gap:2px;align-items:flex-end;height:16px}
+.emb i{width:3px;background:var(--pk);opacity:.8;border-radius:1px}
+.reg{display:flex;gap:8px;margin-top:12px}
+input[type=text]{flex:1;min-width:0;background:var(--s2);border:1px solid var(--line);border-radius:10px;color:var(--tx);padding:10px 12px;font:14px var(--bd)}
+.note{font-size:12px;color:var(--mut);margin-top:14px}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.step{border:1px solid var(--line);border-radius:14px;padding:22px;background:var(--s1)}
+.step .n{font:500 12px var(--mo);color:var(--pk)}
+.step h4{font:700 20px var(--hd);margin:10px 0 6px;letter-spacing:-.01em}
+.step p{margin:0 0 14px;font-size:14px;color:var(--mut)}
+.step code{font:500 12px var(--mo);background:var(--s2);border:1px solid var(--line);padding:3px 8px;border-radius:6px;color:var(--pk2)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.two ul{margin:0;padding-left:18px;color:var(--mut)}
+.two li{margin:6px 0}
+.two li b{color:var(--tx);font-weight:500}
+footer{border-top:1px solid var(--line);padding:48px 0 56px}
+footer .w{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:center}
+footer p{margin:0;color:var(--mut);font-size:14px}
+@media(max-width:900px){.demo,.two{grid-template-columns:1fr}.steps,.facts{grid-template-columns:1fr 1fr}nav ul{display:none}.hero{padding:64px 0 48px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+[hidden]{display:none!important}#vid{display:block;width:100%;height:auto;transform:scaleX(-1)}#ov{position:absolute;inset:0;width:100%;height:100%}#gate{min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px;color:var(--mut);font-size:14px}#gate p{margin:0;max-width:34ch}
+</style>
+</head>
+<body>
+<nav><div class="w"><a class="logo" href="#top"><i></i>SecondEye</a>
+<ul><li><a href="#demo">Demo</a></li><li><a href="#pipeline">Pipeline</a></li><li><a href="#build">Engineering</a></li></ul>
+<a class="btn" href="https://github.com/Aaryamallik03/SecondEye" target="_blank" rel="noopener">GitHub ↗</a></div></nav>
+
+<header class="hero" id="top"><div class="w">
+<div class="eyebrow">Assistive vision · Python</div>
+<h1>A second pair of eyes, <em>that speaks.</em></h1>
+<p class="lead">SecondEye recognises faces from a camera feed and tells you who is there by voice. It is built for people who can't easily see faces, and for anyone who wants a quiet assistant when names slip away.</p>
+<div class="row"><a class="btn p" href="#demo">Try the live demo</a><a class="btn" href="https://github.com/Aaryamallik03/SecondEye" target="_blank" rel="noopener">Read the source ↗</a></div>
+<div class="facts"><div><b>4</b><span>pipeline stages</span></div><div><b>4</b><span>test scripts</span></div><div><b>512-d</b><span>Facenet512 face embeddings</span></div><div><b>Offline</b><span>speech, no cloud needed</span></div></div>
+</div></header>
+
+<section id="demo"><div class="w">
+<div class="eyebrow">Interactive demo</div>
+<h2>Try it with your own face.</h2>
+<p class="sub">Register your face with your webcam, then watch SecondEye recognise you and say your name. It follows the logic of recognize.py: compare each face to stored embeddings, accept it under a distance threshold, confirm it over two checks, then announce it. Everything runs in your browser and nothing is uploaded. No camera? Switch to the simulated scene.</p>
+<div class="demo">
+<div class="card"><h3>Camera frame</h3>
+<div class="ctl" style="margin:0 0 14px"><button class="chip" id="m-live" aria-pressed="true">Live camera</button><button class="chip" id="m-sim" aria-pressed="false">Simulated scene</button></div><div class="stage"><canvas id="cv" width="720" height="420" aria-label="Simulated camera frame with up to three people" hidden></canvas><video id="vid" playsinline muted hidden></video><canvas id="ov" hidden></canvas><div id="gate"><p>Your camera feed is processed in your browser. Nothing is uploaded or saved.</p><button class="btn p" id="cam">Start camera</button></div><div class="tag"><span id="mt">LIVE</span> · <b id="st">idle</b></div></div>
+<div class="ctl" id="chips"></div>
+<div class="slider"><label for="thr">Distance threshold (lower is stricter)</label><input id="thr" type="range" min="0.05" max="0.70" step="0.01" value="0.30"><b id="tv">0.30</b></div>
+<div class="ctl"><button class="btn p" id="scan">Scan frame</button><button class="chip" id="voice" aria-pressed="true">Voice on</button><button class="chip" id="multi" aria-pressed="false">Largest face only</button></div>
+</div>
+<div style="display:grid;gap:20px;align-content:start">
+<div class="card"><h3>Detected</h3><div class="res" id="res"><div class="empty">Press Scan frame to run recognition.</div></div><div class="log" id="log" aria-live="polite"></div></div>
+<div class="card"><h3>Registered faces</h3><div class="db" id="db"></div>
+<div class="reg"><input type="text" id="nm" value="Guest" maxlength="18" aria-label="Name for the new face" placeholder="Your name"><button class="btn" id="rg">Register stranger</button></div>
+<p class="note" id="nt">Like the real script, only the largest face is identified. Tighten the threshold to 0.10 and scan to reject a known face, or loosen it above 0.65 to let the stranger in.</p></div>
+</div></div></div></section>
+
+<section id="pipeline"><div class="w">
+<div class="eyebrow">How it works</div>
+<h2>Four stages, one script each.</h2>
+<p class="sub">The repository keeps each stage in its own file, so every step can be run and tested alone.</p>
+<div class="steps">
+<div class="step"><span class="n">01</span><h4>Register</h4><p>Capture a person's face and store it under their name.</p><code>register.py</code></div>
+<div class="step"><span class="n">02</span><h4>Embed</h4><p>Builds the embedding database that recognition loads at start-up.</p><code>create_embeddings.py</code></div>
+<div class="step"><span class="n">03</span><h4>Recognise</h4><p>Detects faces with OpenCV, embeds them with Facenet512 through DeepFace, and matches by cosine distance.</p><code>recognize.py</code></div>
+<div class="step"><span class="n">04</span><h4>Run the app</h4><p>Tie recognition and spoken output together in one entry point.</p><code>app.py</code></div>
+</div></div></section>
+
+<section id="build"><div class="w">
+<div class="eyebrow">Engineering</div>
+<h2>Built to be tested, not just demoed.</h2>
+<p class="sub">Each behaviour that matters has a test script in the repo.</p>
+<div class="two">
+<div class="card"><h3>Test scripts</h3><ul><li><b>test_database.py</b> checks stored identities</li><li><b>test_recognition.py</b> checks matching</li><li><b>test_multiple_faces.py</b> checks crowded frames</li><li><b>test_voice.py</b> checks spoken output</li></ul></div>
+<div class="card"><h3>Design goals</h3><ul><li><b>Stable announcements:</b> a person must be seen on two consecutive checks before it speaks</li><li><b>Non-blocking voice:</b> offline pyttsx3 runs on a background queue, so the camera loop never waits</li><li><b>Tunable:</b> distance threshold 0.30, recognition every 10 frames</li><li><b>Honest scope:</b> it identifies the largest face today, and multi-face identification is next</li></ul></div>
+</div></div></section>
+
+<footer><div class="w"><div><div class="logo"><i></i>SecondEye</div><p style="margin-top:8px">Built by Aarya Mallik · CSE, NIT Meghalaya</p></div>
+<div class="row"><a class="btn p" href="https://github.com/Aaryamallik03/SecondEye" target="_blank" rel="noopener">View on GitHub ↗</a><a class="btn" href="#top">Back to top</a></div></div></footer>
+
+<script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
+<script>
+(function(){
+var cv=document.getElementById('cv'),c=cv.getContext('2d');
+var P=[{n:'Maya',x:130,t:'#ecd0c3',h:0,e:.14,s:1.12},{n:'Arjun',x:360,t:'#c99d89',h:1,e:.22,s:1},{n:'Stranger',x:590,t:'#a97d6b',h:2,e:.62,s:.88}];
+var on=[true,true,true],db={Maya:1,Arjun:1},res=[],t0=-1,busy=false,voice=true,multi=false,PV=/claudeusercontent|claude\.ai/.test(location.hostname),mode='live',live=[],last=[],stream=null,cand='',cnt=0,cur='',nf=0;
+var $=function(i){return document.getElementById(i)};
+function esc(s){return String(s).replace(/[&<>"]/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]})}
+function seed(s){var a=[],h=0;for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;for(i=0;i<14;i++){h=(h*1664525+1013904223)>>>0;a.push(20+(h%80))}return a}
+function renderDb(){var ks=mode==='live'?live.reduce(function(a,o){a[o.n]=1;return a},{}):db;$('db').innerHTML=!Object.keys(ks).length?'<div class="empty">No faces registered yet.</div>':Object.keys(ks).map(function(k){return'<div><span>'+esc(k)+'</span><span class="emb">'+seed(k).map(function(v){return'<i style="height:'+v+'%"></i>'}).join('')+'</span></div>'}).join('')}
+function renderChips(){$('chips').innerHTML='';P.forEach(function(p,i){var b=document.createElement('button');b.className='chip';b.textContent=(on[i]?'In frame: ':'Out: ')+p.n;b.setAttribute('aria-pressed',on[i]);b.onclick=function(){on[i]=!on[i];res=[];renderChips();renderRes()};$('chips').appendChild(b)})}
+function person(p){var x=p.x;c.save();c.translate(x,410);c.scale(p.s,p.s);c.translate(-x,-410);c.fillStyle='#241a1e';c.beginPath();c.ellipse(x,410,92,118,0,0,7);c.fill();
+c.fillStyle=p.t;c.fillRect(x-14,205,28,34);c.beginPath();c.ellipse(x,170,40,48,0,0,7);c.fill();
+c.fillStyle='#1a1215';c.beginPath();
+if(p.h==0){c.ellipse(x,140,46,34,0,Math.PI,0);c.fill();c.fillRect(x-46,138,14,70);c.fillRect(x+32,138,14,70)}
+else if(p.h==1){c.ellipse(x,136,42,26,0,Math.PI,0);c.fill()}
+else{c.ellipse(x,132,44,30,0,Math.PI,0);c.fill();c.fillRect(x-44,128,88,12)}
+c.fillStyle='#120b0e';c.beginPath();c.arc(x-15,170,3.5,0,7);c.arc(x+15,170,3.5,0,7);c.fill();
+c.strokeStyle='#120b0e';c.lineWidth=2.5;c.beginPath();c.arc(x,188,10,.2,Math.PI-.2);c.stroke();c.restore()}
+function frame(now){if(mode!=='sim'){requestAnimationFrame(frame);return}c.fillStyle='#0f0a0c';c.fillRect(0,0,720,420);c.strokeStyle='rgba(255,255,255,.035)';c.lineWidth=1;
+for(var g=0;g<720;g+=48){c.beginPath();c.moveTo(g,0);c.lineTo(g,420);c.stroke()}for(g=0;g<420;g+=48){c.beginPath();c.moveTo(0,g);c.lineTo(720,g);c.stroke()}
+P.forEach(function(p,i){if(on[i])person(p)});
+res.forEach(function(r){var m=r.m,x=r.p.x;c.strokeStyle=m?'#ff4f93':'#d8c9cf';c.lineWidth=2;c.setLineDash(m?[]:[6,5]);var s=r.p.s,tp=410-314*s,bx=x-62*s;c.strokeRect(bx,tp,124*s,160*s);c.setLineDash([]);
+var tx=r.k?'face':(m?r.p.n:'Unknown')+'  '+r.s.toFixed(2);c.font='500 13px JetBrains Mono,monospace';var w=c.measureText(tx).width+16;
+c.fillStyle=m?'#ff4f93':'#d8c9cf';c.fillRect(bx,tp-24,w,24);c.fillStyle='#1a0610';c.fillText(tx,bx+8,tp-7)});
+if(t0>=0){var k=(now-t0)/900;if(k<=1){var y=60+k*220;c.fillStyle='rgba(255,79,147,.9)';c.fillRect(0,y,720,2);c.fillStyle='rgba(255,79,147,.08)';c.fillRect(0,60,720,y-60)}}
+requestAnimationFrame(frame)}
+function log(s,k){var l=$('log');l.insertAdjacentHTML('beforeend','<div>'+(k?'<span class="k">'+k+'</span> ':'')+s+'</div>');while(l.children.length>40)l.removeChild(l.firstChild);l.scrollTop=l.scrollHeight}
+function renderRes(){var r=$('res');if(!res.length){r.innerHTML='<div class="empty">'+(mode==='live'?(stream?'No face in view.':'Start the camera to begin.'):on.some(Boolean)?'Press Scan frame to run recognition.':'Nobody in frame. Add someone with the chips.')+'</div>';return}
+r.innerHTML=res.map(function(q){return'<div class="r'+(q.m?'':' u')+'"><b>'+esc(q.k?'Face (not analysed)':(q.m?q.p.n:'Unknown person'))+'</b><code>'+(q.k?'skipped':'dist '+q.s.toFixed(2))+'</code><div class="bar"><i style="width:'+Math.round((1-Math.min(q.s,1))*100)+'%"></i></div></div>'}).join('')}
+function speak(){if(!voice||!window.speechSynthesis)return;var n=res.filter(function(q){return q.m}).map(function(q){return q.p.n}),u=res.length-n.length,s=[];
+res.forEach(function(q){if(q.k)return;s.push(q.m?q.p.n+' detected.':'Unknown person detected.')});if(!s.length)s=['No face detected.'];
+speechSynthesis.cancel();var m=new SpeechSynthesisUtterance(s.join(' '));m.rate=1;speechSynthesis.speak(m)}
+$('scan').onclick=function(){if(busy)return;busy=true;res=[];renderRes();$('st').textContent='scanning';log('detect faces in frame…','›');t0=performance.now();
+setTimeout(function(){var th=parseFloat($('thr').value);
+var fs=P.filter(function(p,i){return on[i]}),big=fs.slice().sort(function(a,b){return b.s-a.s})[0];res=fs.map(function(p){var known=!!db[p.n],d=known?Math.max(.03,p.e+(Math.random()-.5)*.04):.58+Math.random()*.08;return{p:p,s:d,m:known&&d<=th,k:!multi&&p!==big}});
+t0=-1;busy=false;$('st').textContent=res.length+' face'+(res.length==1?'':'s');
+res.forEach(function(q){if(q.k){log('skipped (not the largest face)','·');return}log('Recognition: '+(q.m?q.p.n:'Unknown')+' | distance '+q.s.toFixed(2)+(q.m?' ≤ ':' > ')+th.toFixed(2),q.m?'✓':'✗')});if(res.some(function(q){return!q.k}))log('stable for 2 checks, announcing','›');if(!res.length)log('no faces found','!');
+renderRes();speak()},950)};
+$('thr').oninput=function(){$('tv').textContent=parseFloat(this.value).toFixed(2)};
+$('voice').onclick=function(){voice=!voice;this.setAttribute('aria-pressed',voice);this.textContent=voice?'Voice on':'Voice off';if(!voice&&window.speechSynthesis)speechSynthesis.cancel()};
+$('rg').onclick=function(){var v=$('nm').value.trim()||'Guest';if(mode==='live'){if(!last.length){log('no face in view to register','!');return}var f=last.slice().sort(function(a,b){return b.detection.box.area-a.detection.box.area})[0];live.push({n:v,d:f.descriptor});log('stored face sample '+live.filter(function(e){return e.n===v}).length+' for '+esc(v),'+');renderDb();return}if(db[v]){log('name already registered','!');return}
+var s=P[2];delete db[s.n];s.n=v;s.e=.16;db[v]=1;log('embedding stored for '+esc(v),'+');renderDb();renderChips();res=[];renderRes()};
+$('multi').onclick=function(){multi=!multi;this.setAttribute('aria-pressed',multi);this.textContent=multi?'All faces':'Largest face only';res=[];renderRes()};
+function stop(){if(stream){stream.getTracks().forEach(function(t){t.stop()});stream=null}$('vid').srcObject=null}
+function setMode(m){mode=m;stop();res=[];var lv=m==='live';
+$('m-live').setAttribute('aria-pressed',lv);$('m-sim').setAttribute('aria-pressed',!lv);
+$('cv').hidden=lv;$('gate').hidden=!lv;$('vid').hidden=true;$('ov').hidden=true;$('chips').hidden=lv;$('scan').hidden=lv;$('multi').hidden=lv;
+$('mt').textContent=lv?'LIVE':'SIMULATED';$('st').textContent='idle';
+var t=$('thr');t.min=lv?.3:.05;t.max=lv?.8:.7;t.value=lv?.55:.3;$('tv').textContent=parseFloat(t.value).toFixed(2);
+$('rg').textContent=lv?'Register my face':'Register stranger';$('nm').value=lv?'':'Guest';
+$('nt').textContent=lv?'Register your face two or three times for better accuracy, then look away and back. Raise the threshold to be more forgiving, lower it to be stricter.':'Like the real script, only the largest face is identified. Tighten the threshold to 0.10 to reject a known face, or loosen it above 0.65 to let the stranger in.';
+$('cam').hidden=lv&&PV;if(lv&&PV)$('gate').querySelector('p').textContent='Live camera cannot run inside the Claude preview. Download index.html and host it (GitHub Pages works), or try the simulated scene.';
+renderDb();renderRes()}
+async function loop(){if(mode!=='live'||!stream)return;
+try{var v=$('vid'),o=$('ov'),d=await faceapi.detectAllFaces(v,new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:.5})).withFaceLandmarks(true).withFaceDescriptors();
+if(mode!=='live'||!stream)return;
+o.width=v.clientWidth;o.height=v.clientHeight;var g=o.getContext('2d'),k=o.width/v.videoWidth,th=parseFloat($('thr').value);last=d;g.clearRect(0,0,o.width,o.height);
+res=d.map(function(f){var best='Unknown',bd=9;live.forEach(function(e){var z=faceapi.euclideanDistance(f.descriptor,e.d);if(z<bd){bd=z;best=e.n}});var m=live.length>0&&bd<=th;
+var b=f.detection.box,x=o.width-(b.x+b.width)*k,y=b.y*k,w=b.width*k,h=b.height*k;
+g.strokeStyle=m?'#ff4f93':'#d8c9cf';g.lineWidth=2;g.setLineDash(m?[]:[6,5]);g.strokeRect(x,y,w,h);g.setLineDash([]);
+var tx=(m?best:'Unknown')+(live.length?'  '+bd.toFixed(2):'');g.font='500 13px JetBrains Mono,monospace';var tw=g.measureText(tx).width+16;
+g.fillStyle=m?'#ff4f93':'#d8c9cf';g.fillRect(x,Math.max(y-24,0),tw,24);g.fillStyle='#1a0610';g.fillText(tx,x+8,Math.max(y-7,17));
+return{p:{n:best},s:live.length?bd:1,m:m,k:false}});
+$('st').textContent=d.length+' face'+(d.length==1?'':'s');renderRes();
+var key=res.map(function(q){return q.m?q.p.n:'?'}).sort().join('|');
+if(d.length){nf=0;if(key===cand)cnt++;else{cand=key;cnt=1}if(cnt>=2&&key!==cur){cur=key;log('stable for 2 checks: '+esc(key).replace(/\|/g,', ').replace(/\?/g,'Unknown'),'›');speak()}}
+else{nf++;if(nf>10){cur='';cand='';cnt=0}}
+}catch(e){if(!loop.er){loop.er=1;log('detector error: '+esc((e&&e.message)||e),'!')}}
+setTimeout(loop,120)}
+$('cam').onclick=async function(){var b=this,gp=$('gate').querySelector('p');b.disabled=true;b.textContent='Loading models…';
+try{if(!window.faceapi)throw new Error('lib');
+var U='https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model/',L=function(u){return Promise.all([faceapi.nets.tinyFaceDetector.loadFromUri(u),faceapi.nets.faceLandmark68TinyNet.loadFromUri(u),faceapi.nets.faceRecognitionNet.loadFromUri(u)])};
+try{await L(U)}catch(_){await L('./models/')}
+try{await faceapi.tf.ready()}catch(_){try{await faceapi.tf.setBackend('cpu')}catch(__){}}
+b.textContent='Waiting for camera…';
+if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw{name:'Insecure'};stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});
+var v=$('vid');v.srcObject=stream;await v.play();
+$('gate').hidden=true;v.hidden=false;$('ov').hidden=false;$('st').textContent='running';log('camera started','›');renderRes();loop();
+}catch(e){stop();b.disabled=false;b.textContent='Start camera';
+var nm=e&&e.name,perm=nm==='NotAllowedError'||nm==='NotFoundError'||nm==='NotReadableError'||nm==='Insecure'||nm==='OverconstrainedError'||nm==='SecurityError';
+if(perm){var fr=window.self!==window.top;gp.textContent=nm==='NotFoundError'?'No camera found. Connect a camera and try again.':nm==='NotReadableError'?'The camera is busy. Close any other app using it (Zoom, or the Python SecondEye window), then try again.':nm==='Insecure'?'This page needs HTTPS to use the camera. Open it from a secure link.':fr?'The camera is blocked while this page is embedded inside another page. Open it in its own browser tab or host it on GitHub Pages.':'Camera access was blocked. Click the camera icon in the address bar, choose Allow, then press Start camera again.';gp.textContent+=' ('+nm+')'}
+else{gp.textContent='Live mode could not start ('+((e&&e.message)||nm||'unknown error')+'). Try the simulated scene, or open this page from its own https link.';log('start failed: '+esc((e&&e.message)||nm||'unknown'),'!')}}};
+$('m-live').onclick=function(){if(mode!=='live')setMode('live')};
+$('m-sim').onclick=function(){if(mode!=='sim')setMode('sim')};
+setMode(PV?'sim':'live');renderChips();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
